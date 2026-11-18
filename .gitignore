@@ -1,0 +1,31 @@
+# OS / editors
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Go
+/bin/
+*.test
+*.out
+*.prof
+
+# Node
+node_modules/
+dist/
+
+# Personal learning material (kept local, not published)
+lessons/
+DECISIONS.md
+interview/
+
+# Data (large; downloaded or generated locally, never committed)
+data/
+*.edf
+recordings/
