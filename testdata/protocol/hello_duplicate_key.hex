@@ -1,0 +1,11 @@
+# Golden HELLO with the "units" key appearing twice (202 bytes; CRC valid)
+45 45 47 50 01 01 00 00 ba 00 00 00   # header: EEGP, v1, HELLO, reserved 0, body_length 186
+# body: {"stream_id":"9f3a5c0e12b47d68","device_name":"virtual-synthetic","n_channels":3,
+#        "samples_per_frame":2,"sample_rate_hz":160.0,"units":"uV","channel_names":["Fp1","Cz","O2"],"units":"uV"}
+7b 22 73 74 72 65 61 6d 5f 69 64 22 3a 22 39 66 33 61 35 63 30 65 31 32 62 34 37 64 36 38 22 2c
+22 64 65 76 69 63 65 5f 6e 61 6d 65 22 3a 22 76 69 72 74 75 61 6c 2d 73 79 6e 74 68 65 74 69 63
+22 2c 22 6e 5f 63 68 61 6e 6e 65 6c 73 22 3a 33 2c 22 73 61 6d 70 6c 65 73 5f 70 65 72 5f 66 72
+61 6d 65 22 3a 32 2c 22 73 61 6d 70 6c 65 5f 72 61 74 65 5f 68 7a 22 3a 31 36 30 2e 30 2c 22 75
+6e 69 74 73 22 3a 22 75 56 22 2c 22 63 68 61 6e 6e 65 6c 5f 6e 61 6d 65 73 22 3a 5b 22 46 70 31
+22 2c 22 43 7a 22 2c 22 4f 32 22 5d 2c 22 75 6e 69 74 73 22 3a 22 75 56 22 7d
+a2 18 25 5e                           # CRC-32

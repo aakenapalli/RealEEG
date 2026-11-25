@@ -1,0 +1,9 @@
+# Golden FRAME with reserved = 1 (CRC recomputed, so only the reserved field is wrong)
+45 45 47 50 01 02 01 00 2c 00 00 00
+29 00 00 00 00 00 00 00
+15 cd 85 3d fe 9c 97 17
+03 00 02 00
+00 00 48 41 00 00 54 41
+00 00 40 c0 00 00 00 00
+00 00 c0 3f 00 00 00 bf
+0b 6a 52 3c

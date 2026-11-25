@@ -9,6 +9,8 @@ __pycache__/
 .venv/
 venv/
 .ipynb_checkpoints/
+*.egg-info/
+.pytest_cache/
 
 # Go
 /bin/
@@ -29,3 +31,6 @@ interview/
 data/
 *.edf
 recordings/
+
+# Implementation plans (private)
+plans/

@@ -1,0 +1,1 @@
+"""EEG pipeline Python package."""
