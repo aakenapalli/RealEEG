@@ -1,0 +1,14 @@
+{
+  "description": "Frames arriving every 19.8 ms while timestamps advance 20 ms (arrival intervals 1% shorter than timestamp intervals): drift 10000 ppm.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1000000000000, "arrival_ns": 1000025000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000044800000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 2, "timestamp_ns": 1000040000000, "arrival_ns": 1000064600000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 3, "timestamp_ns": 1000060000000, "arrival_ns": 1000084400000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 4, "timestamp_ns": 1000080000000, "arrival_ns": 1000104200000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 0, "last_seq": 4, "accepted": 5, "missing": 0, "dup": 0, "stale": 0, "drift_ppm": 10000.0, "lat_p50_ms": "4.6", "lat_p99_ms": "5.0", "lat_max_ms": "5.0"}
+  ]
+}

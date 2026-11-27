@@ -1,0 +1,13 @@
+{
+  "description": "A repeated seq is a discarded duplicate and its latency is not measured.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1000000000000, "arrival_ns": 1000025000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000045000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000110000000}, "expect": "duplicate"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 2, "timestamp_ns": 1000040000000, "arrival_ns": 1000065000000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 0, "last_seq": 2, "accepted": 3, "missing": 0, "dup": 1, "stale": 0, "drift_ppm": 0.0, "lat_p50_ms": "5.0", "lat_p99_ms": "5.0", "lat_max_ms": "5.0"}
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "description": "A reconnect HELLO that changes channels, samples per frame, rate or channel names is rejected and leaves the stream unchanged.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1000000000000, "arrival_ns": 1000025000000}, "expect": "accepted"},
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 3, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1", "c2"]}, "expect": "HelloMismatchError"},
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 8, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "HelloMismatchError"},
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 250.0, "channel_names": ["c0", "c1"]}, "expect": "HelloMismatchError"},
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "cX"]}, "expect": "HelloMismatchError"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000045000000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 0, "last_seq": 1, "accepted": 2, "missing": 0, "dup": 0, "stale": 0, "drift_ppm": 0.0, "lat_p50_ms": "5.0", "lat_p99_ms": "5.0", "lat_max_ms": "5.0"}
+  ]
+}

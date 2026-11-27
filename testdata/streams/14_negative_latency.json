@@ -1,0 +1,11 @@
+{
+  "description": "A frame can arrive before its nominal end time (a fast or offset clock); negative latency is reported as is.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1000000000000, "arrival_ns": 1000019700000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000040700000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 0, "last_seq": 1, "accepted": 2, "missing": 0, "dup": 0, "stale": 0, "drift_ppm": -50000.0, "lat_p50_ms": "-0.3", "lat_p99_ms": "0.7", "lat_max_ms": "0.7"}
+  ]
+}

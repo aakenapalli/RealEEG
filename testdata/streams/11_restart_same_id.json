@@ -1,0 +1,18 @@
+{
+  "description": "A device restarted with the same stream_id has frames classified stale or duplicate until seq passes the old last.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1000000000000, "arrival_ns": 1000025000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000045000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 2, "timestamp_ns": 1000040000000, "arrival_ns": 1000065000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 3, "timestamp_ns": 1000060000000, "arrival_ns": 1000085000000}, "expect": "accepted"},
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1001000000000, "arrival_ns": 1001025000000}, "expect": "stale"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1001020000000, "arrival_ns": 1001045000000}, "expect": "stale"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 3, "timestamp_ns": 1001060000000, "arrival_ns": 1001085000000}, "expect": "duplicate"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 4, "timestamp_ns": 1001080000000, "arrival_ns": 1001105000000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 0, "last_seq": 4, "accepted": 5, "missing": 0, "dup": 1, "stale": 2, "drift_ppm": 0.0, "lat_p50_ms": "5.0", "lat_p99_ms": "5.0", "lat_max_ms": "5.0"}
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "description": "The first frame sets the baseline even when its seq is above 0; it is not a gap.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 7, "timestamp_ns": 1000140000000, "arrival_ns": 1000165000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 8, "timestamp_ns": 1000160000000, "arrival_ns": 1000185000000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 7, "last_seq": 8, "accepted": 2, "missing": 0, "dup": 0, "stale": 0, "drift_ppm": 0.0, "lat_p50_ms": "5.0", "lat_p99_ms": "5.0", "lat_max_ms": "5.0"}
+  ]
+}

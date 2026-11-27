@@ -1,0 +1,14 @@
+{
+  "description": "A reconnect with the same HELLO continues the stream, and a gap across the reconnect is counted.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1000000000000, "arrival_ns": 1000025000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000045000000}, "expect": "accepted"},
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 4, "timestamp_ns": 1000080000000, "arrival_ns": 1000105000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 5, "timestamp_ns": 1000100000000, "arrival_ns": 1000125000000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 0, "last_seq": 5, "accepted": 4, "missing": 2, "dup": 0, "stale": 0, "drift_ppm": 0.0, "lat_p50_ms": "5.0", "lat_p99_ms": "5.0", "lat_max_ms": "5.0"}
+  ]
+}

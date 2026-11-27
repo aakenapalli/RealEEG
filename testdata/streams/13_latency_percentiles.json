@@ -1,0 +1,19 @@
+{
+  "description": "Ten latencies of 1 to 10 ms in shuffled order: nearest-rank p50 is 5.0 and p99 is 10.0.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1000000000000, "arrival_ns": 1000023000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000041000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 2, "timestamp_ns": 1000040000000, "arrival_ns": 1000062000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 3, "timestamp_ns": 1000060000000, "arrival_ns": 1000090000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 4, "timestamp_ns": 1000080000000, "arrival_ns": 1000104000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 5, "timestamp_ns": 1000100000000, "arrival_ns": 1000126000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 6, "timestamp_ns": 1000120000000, "arrival_ns": 1000145000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 7, "timestamp_ns": 1000140000000, "arrival_ns": 1000169000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 8, "timestamp_ns": 1000160000000, "arrival_ns": 1000188000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 9, "timestamp_ns": 1000180000000, "arrival_ns": 1000207000000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 0, "last_seq": 9, "accepted": 10, "missing": 0, "dup": 0, "stale": 0, "drift_ppm": -32424.242, "lat_p50_ms": "5.0", "lat_p99_ms": "10.0", "lat_max_ms": "10.0"}
+  ]
+}

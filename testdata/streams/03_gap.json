@@ -1,0 +1,13 @@
+{
+  "description": "A jump from seq 1 to seq 5 counts 3 missing frames.",
+  "events": [
+    {"hello": {"stream_id": "0000000000000001", "device_name": "dev", "n_channels": 2, "samples_per_frame": 4, "sample_rate_hz": 200.0, "channel_names": ["c0", "c1"]}, "expect": "ok"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 0, "timestamp_ns": 1000000000000, "arrival_ns": 1000025000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 1, "timestamp_ns": 1000020000000, "arrival_ns": 1000045000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 5, "timestamp_ns": 1000100000000, "arrival_ns": 1000125000000}, "expect": "accepted"},
+    {"frame": {"stream_id": "0000000000000001", "seq": 6, "timestamp_ns": 1000120000000, "arrival_ns": 1000145000000}, "expect": "accepted"}
+  ],
+  "streams": [
+    {"stream_id": "0000000000000001", "initial_seq": 0, "last_seq": 6, "accepted": 4, "missing": 3, "dup": 0, "stale": 0, "drift_ppm": 0.0, "lat_p50_ms": "5.0", "lat_p99_ms": "5.0", "lat_max_ms": "5.0"}
+  ]
+}
