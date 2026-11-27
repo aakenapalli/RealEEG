@@ -286,7 +286,7 @@ func TestServesValidStream(t *testing.T) {
 	sendHello(t, c, H1)
 	sendFrames(t, c, 0, 9)
 	c.Close()
-	waitFor(t, "EOFCloses", func() bool { return counts(rs).EOFCloses == 1 })
+	waitFor(t, "EOFCloses", func() bool { c := counts(rs); return c.EOFCloses == 1 && c.Processed == 10 })
 	sum, _ := rs.stop()
 	if sum.Connections != 1 || sum.Accepted != 10 || sum.Missing != 0 || sum.EOFCloses != 1 || len(sum.Errors) != 0 || sum.Streams != 1 {
 		t.Fatalf("summary = %+v", sum)
@@ -304,30 +304,35 @@ func TestOutputFormat(t *testing.T) {
 	c.Close()
 	waitFor(t, "EOFCloses", func() bool { return counts(rs).EOFCloses == 1 })
 	_, out := rs.stop()
-	sub := strings.NewReplacer("{D}", `\d+`, "{L}", `(-?\d+\.\d|n/a)`)
+	sub := strings.NewReplacer("{D}", `\d+`, "{L}", `(-?\d+\.\d|n/a)`, "{B}", `(\S+)`)
 	re := func(s string) *regexp.Regexp { return regexp.MustCompile(sub.Replace(s)) }
-	startRe := re(`^start: listen=127\.0\.0\.1:\d+ max_conns=16 ring_seconds=2 ring_budget_mb=1024 hello_timeout_s=0\.3 idle_timeout_s=5$`)
-	intervalRe := re(`^t=\d+\.\ds conns={D} accepted={D} missing={D} dup={D} stale={D} errors={D} superseded={D} lat_p50_ms={L} lat_p99_ms={L} lat_max_ms={L} MB/s=\d+\.\d\d$`)
-	summaryRe := re(`^summary: connections={D} rejected_conns={D} accepted={D} missing={D} dup={D} stale={D} eof_closes={D} truncated={D} idle_closes={D} hello_timeouts={D} conn_errors={D} accept_errors={D} superseded={D} errors=(none|[A-Za-z]+:\d+(,[A-Za-z]+:\d+)*) streams={D} evicted={D} bytes={D} elapsed_s=\d+\.\d{3} MB/s=\d+\.\d\d$`)
+	startRe := re(`^start: listen=127\.0\.0\.1:\d+ max_conns=16 ring_seconds=2 ring_budget_mb=1024 hello_timeout_s=0\.3 idle_timeout_s=5 mains_hz=60$`)
+	intervalRe := re(`^t=\d+\.\ds conns={D} accepted={D} missing={D} dup={D} stale={D} errors={D} superseded={D} lat_p50_ms={L} lat_p99_ms={L} lat_max_ms={L} MB/s=\d+\.\d\d proc_p99_ms={L} overruns={D}$`)
+	summaryRe := re(`^summary: connections={D} rejected_conns={D} accepted={D} missing={D} dup={D} stale={D} eof_closes={D} truncated={D} idle_closes={D} hello_timeouts={D} conn_errors={D} accept_errors={D} superseded={D} errors=(none|[A-Za-z]+:\d+(,[A-Za-z]+:\d+)*) streams={D} evicted={D} bytes={D} elapsed_s=\d+\.\d{3} MB/s=\d+\.\d\d processed={D} gaps={D} overruns={D} proc_p99_ms={L} proc_max_ms={L}$`)
 	streamRe := re(`^stream: id=[0-9a-f]{16} device=\S+ channels={D} rate_hz=\S+ samples_per_frame={D} initial_seq=(\d+|n/a) last_seq=(\d+|n/a) accepted={D} missing={D} dup={D} stale={D} ring_frames={D} state=(live|evicted) drift_ppm=(-?\d+\.\d|n/a) lat_p50_ms={L} lat_p99_ms={L} lat_max_ms={L}$`)
+	procRe := re(`^proc: id=[0-9a-f]{16} (unprocessed out_rate_hz=\S+|decim={D} out_rate_hz=\S+ frames={D} gaps={D} overruns={D} features={D} lat_p50_ms={L} lat_p99_ms={L} lat_max_ms={L} bp_delta={B} bp_theta={B} bp_alpha={B} bp_beta={B} bp_gamma={B})$`)
 	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
-	if len(lines) < 4 {
+	if len(lines) < 5 {
 		t.Fatalf("output:\n%s", out)
 	}
 	if !startRe.MatchString(lines[0]) {
 		t.Errorf("bad start line %q", lines[0])
 	}
-	for _, l := range lines[1 : len(lines)-2] {
+	for _, l := range lines[1 : len(lines)-3] {
 		if !intervalRe.MatchString(l) {
 			t.Errorf("bad interval line %q", l)
 		}
 	}
-	if !summaryRe.MatchString(lines[len(lines)-2]) {
-		t.Errorf("bad summary line %q", lines[len(lines)-2])
+	if !summaryRe.MatchString(lines[len(lines)-3]) {
+		t.Errorf("bad summary line %q", lines[len(lines)-3])
 	}
-	sl := lines[len(lines)-1]
+	sl := lines[len(lines)-2]
 	if !streamRe.MatchString(sl) || !strings.Contains(sl, "accepted=5") || !strings.Contains(sl, "ring_frames=100") || !strings.Contains(sl, "state=live") {
 		t.Errorf("bad stream line %q", sl)
+	}
+	pl := lines[len(lines)-1]
+	if !procRe.MatchString(pl) || !strings.Contains(pl, "frames=5") {
+		t.Errorf("bad proc line %q", pl)
 	}
 }
 
@@ -796,6 +801,7 @@ func TestConfigValidate(t *testing.T) {
 		{func(c *Config) { c.PollInterval = 0 }, "ingest: PollInterval must be > 0"},
 		{func(c *Config) { c.TakeoverWait = -1 }, "ingest: TakeoverWait must be >= 0"},
 		{func(c *Config) { c.EvictAfter = -1 }, "ingest: EvictAfter must be >= 0"},
+		{func(c *Config) { c.MainsHz = 55 }, "ingest: MainsHz must be 50 or 60"},
 	}
 	if err := DefaultConfig().Validate(); err != nil {
 		t.Fatal(err)

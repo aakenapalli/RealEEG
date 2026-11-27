@@ -38,6 +38,8 @@ func TestRunRejectsBadFlags(t *testing.T) {
 		{[]string{"--ring-seconds", "61"}, "--ring-seconds must be a number in (0, 60]"},
 		{[]string{"--ring-budget-mb", "0"}, "--ring-budget-mb must be an integer in 1..65536"},
 		{[]string{"--ring-budget-mb", "65537"}, "--ring-budget-mb must be an integer in 1..65536"},
+		{[]string{"--mains-hz", "55"}, "--mains-hz must be 50 or 60"},
+		{[]string{"--mains-hz", "0"}, "--mains-hz must be 50 or 60"},
 		{[]string{"extra"}, `unexpected argument "extra"`},
 	}
 	for _, c := range cases {
@@ -141,7 +143,8 @@ func TestRunEndToEnd(t *testing.T) {
 		t.Fatalf("code = %d", code)
 	}
 	if !strings.Contains(out, "start: ") || !strings.Contains(out, "summary: ") || !strings.Contains(out, "accepted=3") ||
-		strings.Count(out, "\nstream: ")+boolInt(strings.HasPrefix(out, "stream: ")) != 1 {
+		strings.Count(out, "\nstream: ")+boolInt(strings.HasPrefix(out, "stream: ")) != 1 ||
+		strings.Count(out, "\nproc: ") != 1 {
 		t.Fatalf("stderr:\n%s", out)
 	}
 }

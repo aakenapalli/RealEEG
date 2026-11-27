@@ -26,7 +26,7 @@ latency, behavior under faults), using neuroscience as the domain.
 - **Ingest:** receives binary frames over TCP, detects gaps and duplicates, and
   buffers samples.
 - **Processing:** bandpass/notch filtering and band-power features, checked
-  against scipy reference outputs.
+  against a numpy reference implementation and closed-form checks.
 - **Fanout:** WebSocket streams, decimated per client, with a slow-consumer
   policy so one slow client can't stall the pipeline.
 - **Storage:** compressed raw chunks plus a feature store; recorded sessions

@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+	"time"
 )
 
 func pattern(seq uint64, n int) []float32 {
@@ -196,4 +197,80 @@ func TestConcurrentReaders(t *testing.T) {
 	for e := range errs {
 		t.Error(e)
 	}
+}
+
+func TestStamps(t *testing.T) {
+	r := New(4, 1, 2)
+	dst := make([]float32, 2)
+	r.WriteStamped(0, 777, func(d []float32) {})
+	writeSeq(r, 1)
+	if st, stamp := r.ReadStamped(0, dst); st != OK || stamp != 777 {
+		t.Errorf("ReadStamped(0) = %v, %d", st, stamp)
+	}
+	if st, stamp := r.ReadStamped(1, dst); st != OK || stamp != 0 {
+		t.Errorf("ReadStamped(1) = %v, %d", st, stamp)
+	}
+	if st, stamp := r.ReadStamped(2, dst); st != NotYet || stamp != 0 {
+		t.Errorf("ReadStamped(2) = %v, %d", st, stamp)
+	}
+}
+
+func TestFirst(t *testing.T) {
+	r := New(4, 1, 2)
+	if _, ok := r.First(); ok {
+		t.Error("First ok on an empty ring")
+	}
+	writeSeq(r, 5)
+	writeSeq(r, 6)
+	if seq, ok := r.First(); seq != 5 || !ok {
+		t.Errorf("First = %d, %v", seq, ok)
+	}
+}
+
+func closed(ch <-chan struct{}) bool {
+	select {
+	case <-ch:
+		return true
+	default:
+		return false
+	}
+}
+
+func TestChangedClosedByWrite(t *testing.T) {
+	r := New(4, 1, 2)
+	ch := r.Changed()
+	if closed(ch) {
+		t.Fatal("channel closed before a write")
+	}
+	writeSeq(r, 0)
+	if !closed(ch) {
+		t.Fatal("channel not closed by Write")
+	}
+	if closed(r.Changed()) {
+		t.Fatal("new channel is closed")
+	}
+}
+
+func TestChangedWakesAllWaiters(t *testing.T) {
+	r := New(4, 1, 2)
+	ch := r.Changed()
+	var wg sync.WaitGroup
+	done := make(chan struct{}, 4)
+	for i := 0; i < 4; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-ch
+			done <- struct{}{}
+		}()
+	}
+	writeSeq(r, 0)
+	for i := 0; i < 4; i++ {
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Fatalf("only %d waiters woke", i)
+		}
+	}
+	wg.Wait()
 }

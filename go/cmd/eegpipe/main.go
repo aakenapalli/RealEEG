@@ -33,6 +33,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) int {
 	maxConns := fs.Int("max-conns", 16, "connections served at once (1 to 1024)")
 	ringSeconds := fs.Float64("ring-seconds", 2, "seconds of each stream held in its ring buffer (up to 60)")
 	ringBudgetMB := fs.Int("ring-budget-mb", 1024, "memory for all streams together, in MiB (1 to 65536)")
+	mainsHz := fs.Int("mains-hz", 60, "mains frequency to notch out, 50 or 60")
 
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
@@ -74,6 +75,9 @@ func run(ctx context.Context, args []string, stderr io.Writer) int {
 	if *ringBudgetMB < 1 || *ringBudgetMB > 65536 {
 		return fail("--ring-budget-mb must be an integer in 1..65536")
 	}
+	if *mainsHz != 50 && *mainsHz != 60 {
+		return fail("--mains-hz must be 50 or 60")
+	}
 
 	cfg := ingest.DefaultConfig()
 	cfg.Host = *host
@@ -87,6 +91,7 @@ func run(ctx context.Context, args []string, stderr io.Writer) int {
 	cfg.MaxConns = *maxConns
 	cfg.RingSeconds = *ringSeconds
 	cfg.RingBudgetBytes = int64(*ringBudgetMB) << 20
+	cfg.MainsHz = float64(*mainsHz)
 
 	srv, err := ingest.Listen(cfg)
 	if err != nil {

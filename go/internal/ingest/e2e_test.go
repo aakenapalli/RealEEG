@@ -107,6 +107,27 @@ func snapshotFor(t *testing.T, sum Summary, id uint64) StreamSnapshot {
 	return StreamSnapshot{}
 }
 
+func procFor(t *testing.T, sum Summary, id uint64) ProcSnapshot {
+	t.Helper()
+	for _, ps := range sum.ProcSnapshots {
+		if ps.StreamID == id {
+			return ps
+		}
+	}
+	t.Fatalf("no proc snapshot for stream %016x", id)
+	return ProcSnapshot{}
+}
+
+// checkProc checks that every accepted frame was processed and none overrun.
+func checkProc(t *testing.T, sum Summary, sn StreamSnapshot) ProcSnapshot {
+	t.Helper()
+	ps := procFor(t, sum, sn.StreamID)
+	if ps.Frames != sn.Accepted || ps.Overruns != 0 {
+		t.Errorf("stream %016x: Frames %d, Accepted %d, Overruns %d", sn.StreamID, ps.Frames, sn.Accepted, ps.Overruns)
+	}
+	return ps
+}
+
 func reconcile(t *testing.T, dev map[string]int64, snap StreamSnapshot) {
 	t.Helper()
 	if int64(snap.Accepted) != dev["sent"] {
@@ -135,13 +156,22 @@ func TestE2EClean(t *testing.T) {
 	if sn.Accepted != 100 || sn.InitialSeq != 0 || sn.Missing != 0 || sum.Connections != 1 || sum.EOFCloses != 1 || len(sum.Errors) != 0 {
 		t.Fatalf("summary = %+v, stream %+v", sum, sn)
 	}
+	ps := procFor(t, sum, 0xe1)
+	if ps.Frames != sn.Accepted || ps.Gaps != 0 || ps.Overruns != 0 || ps.Decimation != 4 || ps.OutRateHz != 250 || ps.Features != 5 {
+		t.Errorf("proc = %+v, Accepted %d", ps, sn.Accepted)
+	}
+	if math.Abs(ps.Bands[2]-200) >= 20 {
+		t.Errorf("alpha band power = %v", ps.Bands[2])
+	}
 }
 
 func TestE2EDrop(t *testing.T) {
 	rs := startE2E(t, nil)
 	dev := runDevice(t, rs.srv.Port(), 8, "--duration", "2", "--seed", "7", "--drop-prob", "0.3", "--stream-id", "00000000000000e2")
 	sum, _ := rs.wait()
-	reconcile(t, dev, snapshotFor(t, sum, 0xe2))
+	sn := snapshotFor(t, sum, 0xe2)
+	reconcile(t, dev, sn)
+	checkProc(t, sum, sn)
 	if dev["drop"] <= 0 {
 		t.Fatalf("device drop = %d", dev["drop"])
 	}
@@ -169,7 +199,9 @@ func TestE2EDisconnects(t *testing.T) {
 	rs := startE2E(t, nil)
 	dev := runDevice(t, rs.srv.Port(), 8, "--duration", "2", "--disconnect-every", "0.3", "--stream-id", "00000000000000e5")
 	sum, _ := rs.wait()
-	reconcile(t, dev, snapshotFor(t, sum, 0xe5))
+	sn := snapshotFor(t, sum, 0xe5)
+	reconcile(t, dev, sn)
+	checkProc(t, sum, sn)
 	if int64(sum.Connections) != dev["connects"] || dev["connects"] <= 1 || sum.EOFCloses != sum.Connections || sum.Superseded != 0 || sum.Missing != 0 {
 		t.Fatalf("summary = %+v, device %v", sum, dev)
 	}
@@ -180,7 +212,9 @@ func TestE2EAllFaultsButCorruption(t *testing.T) {
 	dev := runDevice(t, rs.srv.Port(), 8, "--duration", "2", "--seed", "11", "--drop-prob", "0.2", "--dup-prob", "0.2",
 		"--jitter-ms", "3", "--drift-ppm", "-300", "--disconnect-every", "0.25", "--stream-id", "00000000000000e6")
 	sum, _ := rs.wait()
-	reconcile(t, dev, snapshotFor(t, sum, 0xe6))
+	sn := snapshotFor(t, sum, 0xe6)
+	reconcile(t, dev, sn)
+	checkProc(t, sum, sn)
 }
 
 func TestE2ECorruptionBounds(t *testing.T) {
@@ -224,7 +258,9 @@ func TestE2EConcurrentDevices(t *testing.T) {
 	}
 	sum, _ := rs.wait()
 	for k := 1; k <= 4; k++ {
-		reconcile(t, devs[k], snapshotFor(t, sum, 0xf0+uint64(k)))
+		sn := snapshotFor(t, sum, 0xf0+uint64(k))
+		reconcile(t, devs[k], sn)
+		checkProc(t, sum, sn)
 	}
 	if sum.Connections != 4 || sum.RejectedConns != 0 || sum.Streams != 4 {
 		t.Fatalf("summary = %+v", sum)

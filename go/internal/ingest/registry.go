@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aakenapalli/RealEEG/go/internal/dsp"
 	"github.com/aakenapalli/RealEEG/go/internal/protocol"
 	"github.com/aakenapalli/RealEEG/go/internal/ring"
 )
@@ -64,6 +65,7 @@ type RegistryConfig struct {
 	RingSeconds     float64
 	RingBudgetBytes int64
 	EvictAfter      time.Duration
+	Processing      bool             // false keeps the ingest-only behaviour; the server sets true
 	Now             func() time.Time // nil means time.Now
 }
 
@@ -119,6 +121,11 @@ func RingCapacity(ringSeconds, sampleRateHz float64, samplesPerFrame int) int {
 	return n
 }
 
+// FeatureRingCapacity returns the number of slots in a stream's feature ring.
+func FeatureRingCapacity(ringSeconds float64) int {
+	return max(2, int(math.Ceil(ringSeconds*dsp.FeaturesPerSecond)))
+}
+
 // Registry tracks every stream.
 type Registry struct {
 	cfg RegistryConfig
@@ -140,12 +147,15 @@ type Stream struct {
 	id    uint64
 	hello protocol.Hello // the stream's first HELLO
 	need  int64
+	proc  bool // the stream has processing (fixed at creation)
 
 	mu         sync.Mutex
 	conn       uint64
 	detachedAt time.Time
 	evicted    bool
 	ring       *ring.Ring
+	outRing    *ring.Ring
+	featRing   *ring.Ring
 	hist       *histogram
 	evP50      string
 	evP99      string
@@ -176,8 +186,27 @@ func (r *Registry) ringCapacity(h protocol.Hello) int {
 	return RingCapacity(r.cfg.RingSeconds, h.SampleRateHz, h.SamplesPerFrame)
 }
 
+func (r *Registry) hasProcessing(h protocol.Hello) bool {
+	return r.cfg.Processing && dsp.Processable(h.SampleRateHz, h.SamplesPerFrame)
+}
+
 func (r *Registry) needFor(h protocol.Hello) int64 {
-	return int64(r.ringCapacity(h))*int64(h.NChannels)*int64(h.SamplesPerFrame)*4 + StreamOverheadBytes
+	need := int64(r.ringCapacity(h))*int64(h.NChannels)*int64(h.SamplesPerFrame)*4 + StreamOverheadBytes
+	if r.hasProcessing(h) {
+		c := int64(h.NChannels)
+		op := int64(h.SamplesPerFrame / dsp.DecimationFactor(h.SampleRateHz, h.SamplesPerFrame))
+		need += int64(r.ringCapacity(h))*c*op*4 +
+			int64(FeatureRingCapacity(r.cfg.RingSeconds))*c*dsp.NumBands*4 +
+			dsp.StateBytes(h.NChannels, dsp.OutputRate(h.SampleRateHz, h.SamplesPerFrame))
+	}
+	return need
+}
+
+// newProcRings allocates the output and feature rings of a stream with processing.
+func (r *Registry) newProcRings(h protocol.Hello) (out, feat *ring.Ring) {
+	op := h.SamplesPerFrame / dsp.DecimationFactor(h.SampleRateHz, h.SamplesPerFrame)
+	return ring.New(r.ringCapacity(h), h.NChannels, op),
+		ring.New(FeatureRingCapacity(r.cfg.RingSeconds), h.NChannels, dsp.NumBands)
 }
 
 func sameMetadata(a, b protocol.Hello) bool {
@@ -230,11 +259,13 @@ func (r *Registry) reserve(id uint64, need int64) *RejectError {
 	return nil
 }
 
-// evict frees a stream's ring and histogram. The caller holds r.mu.
+// evict frees a stream's rings and histogram. The caller holds r.mu.
 func (r *Registry) evict(s *Stream) {
 	s.mu.Lock()
 	s.evP50, s.evP99, s.evMax = s.hist.p50(), s.hist.p99(), s.hist.maxString()
 	s.ring = nil
+	s.outRing = nil
+	s.featRing = nil
 	s.hist = nil
 	s.evicted = true
 	s.mu.Unlock()
@@ -271,9 +302,15 @@ func (r *Registry) Attach(h protocol.Hello, connID uint64) (*Stream, error) {
 			return nil, rej
 		}
 		rg := ring.New(r.ringCapacity(s.hello), s.hello.NChannels, s.hello.SamplesPerFrame)
+		var outRg, featRg *ring.Ring
+		if s.proc {
+			outRg, featRg = r.newProcRings(s.hello)
+		}
 		hist := new(histogram)
 		s.mu.Lock()
 		s.ring = rg
+		s.outRing = outRg
+		s.featRing = featRg
 		s.hist = hist
 		s.evicted = false
 		s.conn = connID
@@ -288,14 +325,22 @@ func (r *Registry) Attach(h protocol.Hello, connID uint64) (*Stream, error) {
 	}
 	first := h
 	first.ChannelNames = append([]string(nil), h.ChannelNames...)
+	proc := r.hasProcessing(h)
+	var outRg, featRg *ring.Ring
+	if proc {
+		outRg, featRg = r.newProcRings(h)
+	}
 	s := &Stream{
-		reg:   r,
-		id:    h.StreamID,
-		hello: first,
-		need:  need,
-		conn:  connID,
-		ring:  ring.New(r.ringCapacity(h), h.NChannels, h.SamplesPerFrame),
-		hist:  new(histogram),
+		reg:      r,
+		id:       h.StreamID,
+		hello:    first,
+		need:     need,
+		proc:     proc,
+		outRing:  outRg,
+		featRing: featRg,
+		conn:     connID,
+		ring:     ring.New(r.ringCapacity(h), h.NChannels, h.SamplesPerFrame),
+		hist:     new(histogram),
 	}
 	r.streams[h.StreamID] = s
 	r.order = append(r.order, s)
@@ -358,6 +403,24 @@ func (r *Registry) Snapshots() []StreamSnapshot {
 	return out
 }
 
+// Streams returns a copy of the creation-order list of streams.
+func (r *Registry) Streams() []*Stream {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]*Stream(nil), r.order...)
+}
+
+// Hello returns the stream's first HELLO. It is immutable: do not modify ChannelNames.
+func (s *Stream) Hello() protocol.Hello { return s.hello }
+
+// ProcRings returns the stream's ingest, output and feature rings. All are nil
+// while the stream is evicted; out and feat are nil without processing.
+func (s *Stream) ProcRings() (in, out, feat *ring.Ring) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.ring, s.outRing, s.featRing
+}
+
 // Ring returns the stream's ring, or nil while it is evicted.
 func (s *Stream) Ring() *ring.Ring {
 	s.mu.Lock()
@@ -409,7 +472,7 @@ func (s *Stream) OnFrame(connID uint64, f protocol.Frame, arrivalNs int64) Resul
 	s.lastSeq = seq
 	s.hasFrames = true
 	s.accepted++
-	s.ring.Write(seq, func(dst []float32) { f.DecodeSamples(dst) })
+	s.ring.WriteStamped(seq, arrivalNs, func(dst []float32) { f.DecodeSamples(dst) })
 
 	v := math.RoundToEven(float64(s.hello.SamplesPerFrame) * 1e9 / s.hello.SampleRateHz)
 	var dur int64

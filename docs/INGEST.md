@@ -3,8 +3,8 @@
 `eegpipe` is the Go pipeline core. Its first stage, ingest, accepts
 [EEGP](PROTOCOL.md) connections from several devices at once, validates every
 message, tracks each stream with the stream rules in [RECEIVER.md](RECEIVER.md),
-and keeps the most recent frames of each stream in a ring buffer for the later
-stages (processing, fanout, storage) to read. It reports the same counts as the
+and keeps the most recent frames of each stream in a ring buffer for the
+[processing stage](PROCESSING.md) and later stages to read. It reports the same counts as the
 Python test receiver, so a [virtual device](DEVICE.md) run reconciles against
 either one (see [Output](#output) for when the match is exact).
 
@@ -33,7 +33,8 @@ python -m eegpipe.device synthetic --duration 10 --drop-prob 0.1
 | `--exit-after-idle SECONDS` | none | Stop once no connection has been open for this long. The countdown starts when the last open connection ends, so it never fires before the first connection |
 | `--max-conns N` | 16 | Connections served at once (1 to 1024). Extra connections are accepted and closed immediately. Set it to at least the number of devices plus the number that may reconnect at the same time (twice the device count is always enough), so that a reconnecting device finds a free slot |
 | `--ring-seconds S` | 2 | How much of each stream the ring buffer holds (up to 60 s) |
-| `--ring-budget-mb MiB` | 1024 | Memory for all streams together, in MiB (1 to 65536): each live (not evicted) stream's ring plus 256 KiB |
+| `--ring-budget-mb MiB` | 1024 | Memory for all streams together, in MiB (1 to 65536): each live stream's rings and processing state plus 256 KiB |
+| `--mains-hz HZ` | 60 | Mains frequency the processing stage notches out (50 or 60) |
 
 Without `--duration` or `--exit-after-idle` it runs until Ctrl-C or SIGTERM,
 then prints its summary. The exit code is 0, or 2 for bad options or when it
@@ -95,18 +96,21 @@ gets one of four answers:
 
 Reads never wait for new data, and a reader holds the ring's lock only while
 copying one frame. A reader that falls behind gets `overwritten` instead of
-slowing the writer down.
+slowing the writer down. To wait for a new frame, a reader uses `Changed`; see
+[PROCESSING.md](PROCESSING.md#reading-the-rings).
 
-Every live (not evicted) stream is charged its ring plus 256 KiB (its latency
-histogram and a typical record) against `--ring-budget-mb`. At full scale
+Every live (not evicted) stream is charged its ingest ring, and when it is processed its
+output ring, feature ring and processing state, plus 256 KiB (its latency histogram and a
+typical record) against `--ring-budget-mb`. At full scale
 (1,024 channels at 30 kHz, 600 samples per frame) a 2 s ring is 100 frames,
-about 246 MB (MB = 10⁶ bytes), so the default 1 GiB holds four such streams.
+about 246 MB (MB = 10⁶ bytes), about 251 MB with its processing rings and state, so the
+default 1 GiB holds four such streams.
 
 When a new or returning stream does not fit, the server looks at streams that
 have had no connection for at least 60 s. If evicting some of them
 (longest-detached first) makes room, they are evicted. Otherwise nothing is
 evicted, and the new connection is closed and counted as `ResourceLimitError`.
-Eviction frees only a stream's ring and latency histogram: the stream keeps its
+Eviction frees only a stream's rings and latency histogram: the stream keeps its
 counts and its line in the summary (`state=evicted`, `ring_frames=0`). If its
 device reconnects later with a matching HELLO, the stream gets a new ring if the
 budget allows, and continues counting where it left off; its latency
@@ -122,6 +126,7 @@ Memory outside the budget:
   names uses up to about 200 KB more than the 256 KiB charged.
 - Evicted streams are charged nothing, but their records (up to about 200 KB
   each, mostly channel names) are kept until the service stops.
+- The processing stage's per-stream buffers and latency histogram; see [PROCESSING.md](PROCESSING.md#memory).
 
 ## Output
 
@@ -130,10 +135,11 @@ All output goes to stderr. For example, from the quick start above without
 interval lines after the first omitted):
 
 ```text
-start: listen=127.0.0.1:7700 max_conns=16 ring_seconds=2 ring_budget_mb=1024 hello_timeout_s=5 idle_timeout_s=5
-t=1.0s conns=1 accepted=50 missing=0 dup=0 stale=0 errors=0 superseded=0 lat_p50_ms=0.1 lat_p99_ms=0.3 lat_max_ms=0.4 MB/s=0.26
-summary: connections=1 rejected_conns=0 accepted=500 missing=0 dup=0 stale=0 eof_closes=1 truncated=0 idle_closes=0 hello_timeouts=0 conn_errors=0 accept_errors=0 superseded=0 errors=none streams=1 evicted=0 bytes=2578752 elapsed_s=12.004 MB/s=0.21
+start: listen=127.0.0.1:7700 max_conns=16 ring_seconds=2 ring_budget_mb=1024 hello_timeout_s=5 idle_timeout_s=5 mains_hz=60
+t=1.0s conns=1 accepted=50 missing=0 dup=0 stale=0 errors=0 superseded=0 lat_p50_ms=0.1 lat_p99_ms=0.3 lat_max_ms=0.4 MB/s=0.26 proc_p99_ms=0.2 overruns=0
+summary: connections=1 rejected_conns=0 accepted=500 missing=0 dup=0 stale=0 eof_closes=1 truncated=0 idle_closes=0 hello_timeouts=0 conn_errors=0 accept_errors=0 superseded=0 errors=none streams=1 evicted=0 bytes=2578752 elapsed_s=12.004 MB/s=0.21 processed=500 gaps=0 overruns=0 proc_p99_ms=0.2 proc_max_ms=0.6
 stream: id=3f2a9c0d41b7e865 device=eegpipe-synthetic channels=64 rate_hz=1000 samples_per_frame=20 initial_seq=0 last_seq=499 accepted=500 missing=0 dup=0 stale=0 ring_frames=100 state=live drift_ppm=0.3 lat_p50_ms=0.1 lat_p99_ms=0.3 lat_max_ms=0.5
+proc: id=3f2a9c0d41b7e865 decim=4 out_rate_hz=250 frames=500 gaps=0 overruns=0 features=37 lat_p50_ms=0.1 lat_p99_ms=0.2 lat_max_ms=0.6 bp_delta=0.126118 bp_theta=0.179127 bp_alpha=200.538 bp_beta=50.3521 bp_gamma=1.21282
 ```
 
 - Interval lines are at least 1 s apart and count events since the previous
@@ -143,6 +149,7 @@ stream: id=3f2a9c0d41b7e865 device=eegpipe-synthetic channels=64 rate_hz=1000 sa
   example `errors=ChecksumError:3,HelloMismatchError:1`, or `none`.
 - `streams` counts every stream created, and `evicted` the streams that are
   evicted when the service stops.
+- Each `stream:` line is followed by that stream's `proc:` line, and the start, interval and summary lines end with the processing fields; see [PROCESSING.md](PROCESSING.md#output).
 - `elapsed_s` and the summary's `MB/s` run from startup to shutdown. In `MB/s`,
   MB means 10⁶ bytes; `ring_budget_mb` is in MiB.
 - A connection closed because the service is stopping is not counted in any
@@ -159,7 +166,8 @@ stream: id=3f2a9c0d41b7e865 device=eegpipe-synthetic channels=64 rate_hz=1000 sa
 |---|---|
 | `go/internal/protocol` | EEGP decoding and encoding, strict HELLO parsing, the per-connection validator; tested against `testdata/protocol/` |
 | `go/internal/ring` | The per-stream frame ring |
-| `go/internal/ingest` | The stream registry (stream rules, latency, drift, ring budget) and the TCP server |
+| `go/internal/dsp` | Filter design, biquad cascades, decimation and band power for the processing stage |
+| `go/internal/ingest` | The stream registry (stream rules, latency, drift, ring budget), the TCP server and the processing stage |
 | `go/cmd/eegpipe` | The command-line binary |
 
 ```bash
@@ -176,5 +184,3 @@ go test -tags e2e -run E2E ./internal/ingest   # the real Python device against 
 - Stream state lives in memory and is lost when the service stops.
 - Stream records are never removed while the service runs, so a client that keeps
   creating new stream IDs makes memory grow outside the budget.
-- Readers cannot yet wait for new frames; they poll `Head`. A notification
-  mechanism comes with the processing stage.

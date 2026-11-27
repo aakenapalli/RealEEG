@@ -1,0 +1,72 @@
+[
+ {
+  "sample_rate_hz": 30000.0,
+  "samples_per_frame": 600,
+  "decimation": 120,
+  "output_rate_hz": 250.0,
+  "processable": true
+ },
+ {
+  "sample_rate_hz": 1000.0,
+  "samples_per_frame": 20,
+  "decimation": 4,
+  "output_rate_hz": 250.0,
+  "processable": true
+ },
+ {
+  "sample_rate_hz": 160.0,
+  "samples_per_frame": 3,
+  "decimation": 1,
+  "output_rate_hz": 160.0,
+  "processable": true
+ },
+ {
+  "sample_rate_hz": 200.0,
+  "samples_per_frame": 4,
+  "decimation": 1,
+  "output_rate_hz": 200.0,
+  "processable": true
+ },
+ {
+  "sample_rate_hz": 2000.0,
+  "samples_per_frame": 40,
+  "decimation": 8,
+  "output_rate_hz": 250.0,
+  "processable": true
+ },
+ {
+  "sample_rate_hz": 1024.0,
+  "samples_per_frame": 20,
+  "decimation": 4,
+  "output_rate_hz": 256.0,
+  "processable": true
+ },
+ {
+  "sample_rate_hz": 512.0,
+  "samples_per_frame": 10,
+  "decimation": 2,
+  "output_rate_hz": 256.0,
+  "processable": true
+ },
+ {
+  "sample_rate_hz": 30000.0,
+  "samples_per_frame": 7,
+  "decimation": 7,
+  "output_rate_hz": 4285.714285714285,
+  "processable": false
+ },
+ {
+  "sample_rate_hz": 100000.0,
+  "samples_per_frame": 2000,
+  "decimation": 400,
+  "output_rate_hz": 250.0,
+  "processable": true
+ },
+ {
+  "sample_rate_hz": 100.0,
+  "samples_per_frame": 2,
+  "decimation": 1,
+  "output_rate_hz": 100.0,
+  "processable": false
+ }
+]

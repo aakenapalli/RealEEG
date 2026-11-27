@@ -495,3 +495,100 @@ func BenchmarkFramePath(b *testing.B) {
 		s.OnFrame(1, m.Frame, 0)
 	}
 }
+
+func newProcRegistry(budget int64, clk *fakeClock) *Registry {
+	return NewRegistry(RegistryConfig{RingSeconds: 2, RingBudgetBytes: budget, EvictAfter: 60 * time.Second, Processing: true, Now: clk.Now})
+}
+
+func TestFeatureRingCapacity(t *testing.T) {
+	for _, c := range []struct {
+		sec  float64
+		want int
+	}{{2, 8}, {0.1, 2}, {60, 240}} {
+		if got := FeatureRingCapacity(c.sec); got != c.want {
+			t.Errorf("FeatureRingCapacity(%g) = %d, want %d", c.sec, got, c.want)
+		}
+	}
+}
+
+func TestProcRingsAllocated(t *testing.T) {
+	r := newProcRegistry(gib, &fakeClock{now: t0})
+	s := mustAttach(t, r, H1, 1)
+	in, out, feat := s.ProcRings()
+	if in == nil || out == nil || feat == nil {
+		t.Fatalf("rings: %v %v %v", in, out, feat)
+	}
+	if in.Capacity() != 100 || in.FrameLen() != 8 {
+		t.Errorf("in: %d / %d", in.Capacity(), in.FrameLen())
+	}
+	if out.Capacity() != 100 || out.FrameLen() != 8 {
+		t.Errorf("out: %d / %d", out.Capacity(), out.FrameLen())
+	}
+	if feat.Capacity() != 8 || feat.FrameLen() != 10 {
+		t.Errorf("feat: %d / %d", feat.Capacity(), feat.FrameLen())
+	}
+}
+
+func TestProcBudget(t *testing.T) {
+	r := newProcRegistry(277887, &fakeClock{now: t0})
+	_, err := r.Attach(H1, 1)
+	wantReject(t, err, ResourceLimitName)
+	r = newProcRegistry(277888, &fakeClock{now: t0})
+	if _, err := r.Attach(H1, 1); err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+}
+
+func TestUnprocessableHasNoProcRings(t *testing.T) {
+	r := newProcRegistry(263744, &fakeClock{now: t0})
+	s, err := r.Attach(testHello(1, 2, 2, 100), 1)
+	if err != nil {
+		t.Fatalf("Attach: %v", err)
+	}
+	in, out, feat := s.ProcRings()
+	if in == nil || out != nil || feat != nil {
+		t.Errorf("rings: %v %v %v", in, out, feat)
+	}
+}
+
+func TestEvictionFreesProcRings(t *testing.T) {
+	clk := &fakeClock{now: t0}
+	r := newProcRegistry(277888, clk)
+	s := mustAttach(t, r, H1, 1)
+	r.Detach(s, 1)
+	clk.now = t0.Add(60 * time.Second)
+	mustAttach(t, r, H2, 2)
+	in, out, feat := s.ProcRings()
+	if in != nil || out != nil || feat != nil {
+		t.Errorf("rings after eviction: %v %v %v", in, out, feat)
+	}
+}
+
+func TestOnFrameStampsArrival(t *testing.T) {
+	r := newProcRegistry(gib, &fakeClock{now: t0})
+	s := mustAttach(t, r, H1, 1)
+	if res := s.OnFrame(1, testFrame(0, 0, 2, 4, 0), 12345); res != Accepted {
+		t.Fatalf("OnFrame = %v", res)
+	}
+	st, stamp := s.Ring().ReadStamped(0, make([]float32, 8))
+	if st != ring.OK || stamp != 12345 {
+		t.Errorf("ReadStamped = %v, %d", st, stamp)
+	}
+}
+
+func TestStreamsAndHello(t *testing.T) {
+	r := newProcRegistry(gib, &fakeClock{now: t0})
+	s1 := mustAttach(t, r, H1, 1)
+	mustAttach(t, r, H2, 2)
+	r.Detach(s1, 1)
+	h := H1
+	h.DeviceName = "dev-b"
+	mustAttach(t, r, h, 3)
+	list := r.Streams()
+	if len(list) != 2 || list[0].Hello().StreamID != 1 || list[1].Hello().StreamID != 2 {
+		t.Fatalf("Streams = %v", list)
+	}
+	if got := list[0].Hello().DeviceName; got != "dev" {
+		t.Errorf("DeviceName = %q", got)
+	}
+}

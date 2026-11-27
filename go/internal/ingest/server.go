@@ -31,6 +31,7 @@ type Config struct {
 	EvictAfter      time.Duration
 	StatsInterval   time.Duration
 	PollInterval    time.Duration
+	MainsHz         float64 // 50 or 60: the mains frequency the processing stage notches out
 }
 
 func DefaultConfig() Config {
@@ -48,6 +49,7 @@ func DefaultConfig() Config {
 		EvictAfter:      60 * time.Second,
 		StatsInterval:   time.Second,
 		PollInterval:    200 * time.Millisecond,
+		MainsHz:         60,
 	}
 }
 
@@ -79,6 +81,8 @@ func (c Config) Validate() error {
 		return errors.New("ingest: TakeoverWait must be >= 0")
 	case c.EvictAfter < 0:
 		return errors.New("ingest: EvictAfter must be >= 0")
+	case !(c.MainsHz == 50 || c.MainsHz == 60):
+		return errors.New("ingest: MainsHz must be 50 or 60")
 	}
 	return nil
 }
@@ -94,6 +98,9 @@ type Summary struct {
 	Bytes                                   uint64
 	Elapsed                                 time.Duration
 	StreamSnapshots                         []StreamSnapshot
+	Processed, Gaps, Overruns               uint64
+	ProcP99, ProcMax                        string
+	ProcSnapshots                           []ProcSnapshot
 }
 
 const takeoverPoll = 5 * time.Millisecond
@@ -120,6 +127,7 @@ type Server struct {
 	cfg  Config
 	ln   net.Listener
 	reg  *Registry
+	proc *procStage
 	port int
 
 	ran      atomic.Bool
@@ -155,11 +163,13 @@ func Listen(cfg Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	reg := NewRegistry(RegistryConfig{RingSeconds: cfg.RingSeconds, RingBudgetBytes: cfg.RingBudgetBytes, EvictAfter: cfg.EvictAfter, Processing: true})
 	return &Server{
 		cfg:    cfg,
 		ln:     ln,
 		port:   ln.Addr().(*net.TCPAddr).Port,
-		reg:    NewRegistry(RegistryConfig{RingSeconds: cfg.RingSeconds, RingBudgetBytes: cfg.RingBudgetBytes, EvictAfter: cfg.EvictAfter}),
+		reg:    reg,
+		proc:   newProcStage(reg, cfg.MainsHz),
 		active: make(map[uint64]*activeConn),
 		errs:   make(map[string]uint64),
 	}, nil
@@ -190,6 +200,7 @@ func (s *Server) counters() Summary {
 	t := s.reg.Totals()
 	sum.Accepted, sum.Missing, sum.Dup, sum.Stale = t.Accepted, t.Missing, t.Dup, t.Stale
 	sum.Streams, sum.Evicted = t.Streams, t.Evicted
+	sum.Processed, sum.Gaps, sum.Overruns = s.proc.totals()
 	return sum
 }
 
@@ -420,6 +431,7 @@ func (s *Server) serve(id uint64, ac *activeConn) {
 				s.finish(st)
 				return
 			}
+			s.proc.ensure(stream)
 		case protocol.MsgFrame:
 			stream.OnFrame(id, msg.Frame, arrival)
 		}
@@ -449,9 +461,9 @@ func (s *Server) Run(ctx context.Context, out io.Writer) Summary {
 	if s.ran.Swap(true) {
 		panic("ingest: Run called twice")
 	}
-	fmt.Fprintf(out, "start: listen=%s max_conns=%d ring_seconds=%s ring_budget_mb=%d hello_timeout_s=%s idle_timeout_s=%s\n",
+	fmt.Fprintf(out, "start: listen=%s max_conns=%d ring_seconds=%s ring_budget_mb=%d hello_timeout_s=%s idle_timeout_s=%s mains_hz=%s\n",
 		net.JoinHostPort(s.cfg.Host, strconv.Itoa(s.port)), s.cfg.MaxConns, g6(s.cfg.RingSeconds),
-		s.cfg.RingBudgetBytes/(1<<20), g6(s.cfg.HelloTimeout.Seconds()), g6(s.cfg.IdleTimeout.Seconds()))
+		s.cfg.RingBudgetBytes/(1<<20), g6(s.cfg.HelloTimeout.Seconds()), g6(s.cfg.IdleTimeout.Seconds()), g6(s.cfg.MainsHz))
 	t0 := time.Now()
 
 	acceptDone := make(chan struct{})
@@ -480,12 +492,13 @@ loop:
 		if now := time.Now(); now.Sub(lastLine) >= s.cfg.StatsInterval {
 			cur := s.counters()
 			p50, p99, mx := s.reg.TakeInterval()
+			procP99 := s.proc.takeInterval()
 			secs := now.Sub(lastLine).Seconds()
-			fmt.Fprintf(out, "t=%.1fs conns=%d accepted=%d missing=%d dup=%d stale=%d errors=%d superseded=%d lat_p50_ms=%s lat_p99_ms=%s lat_max_ms=%s MB/s=%.2f\n",
+			fmt.Fprintf(out, "t=%.1fs conns=%d accepted=%d missing=%d dup=%d stale=%d errors=%d superseded=%d lat_p50_ms=%s lat_p99_ms=%s lat_max_ms=%s MB/s=%.2f proc_p99_ms=%s overruns=%d\n",
 				now.Sub(t0).Seconds(), cur.Connections-prev.Connections, cur.Accepted-prev.Accepted,
 				cur.Missing-prev.Missing, cur.Dup-prev.Dup, cur.Stale-prev.Stale,
 				errorTotal(cur.Errors)-errorTotal(prev.Errors), cur.Superseded-prev.Superseded,
-				p50, p99, mx, float64(cur.Bytes-prev.Bytes)/secs/1e6)
+				p50, p99, mx, float64(cur.Bytes-prev.Bytes)/secs/1e6, procP99, cur.Overruns-prev.Overruns)
 			prev = cur
 			lastLine = now
 		}
@@ -500,9 +513,12 @@ loop:
 	s.connsMu.Unlock()
 	<-acceptDone
 	s.wg.Wait()
+	s.proc.stop()
 
 	sum := s.counters()
 	sum.StreamSnapshots = s.reg.Snapshots()
+	sum.ProcSnapshots = s.proc.snapshots()
+	sum.ProcP99, sum.ProcMax = s.proc.totalStrings()
 	sum.Elapsed = time.Since(t0)
 
 	list := "none"
@@ -522,12 +538,17 @@ loop:
 	if sum.Elapsed > 0 {
 		mbs = float64(sum.Bytes) / sum.Elapsed.Seconds() / 1e6
 	}
-	fmt.Fprintf(out, "summary: connections=%d rejected_conns=%d accepted=%d missing=%d dup=%d stale=%d eof_closes=%d truncated=%d idle_closes=%d hello_timeouts=%d conn_errors=%d accept_errors=%d superseded=%d errors=%s streams=%d evicted=%d bytes=%d elapsed_s=%.3f MB/s=%.2f\n",
+	fmt.Fprintf(out, "summary: connections=%d rejected_conns=%d accepted=%d missing=%d dup=%d stale=%d eof_closes=%d truncated=%d idle_closes=%d hello_timeouts=%d conn_errors=%d accept_errors=%d superseded=%d errors=%s streams=%d evicted=%d bytes=%d elapsed_s=%.3f MB/s=%.2f processed=%d gaps=%d overruns=%d proc_p99_ms=%s proc_max_ms=%s\n",
 		sum.Connections, sum.RejectedConns, sum.Accepted, sum.Missing, sum.Dup, sum.Stale, sum.EOFCloses, sum.Truncated,
 		sum.IdleCloses, sum.HelloTimeouts, sum.ConnErrors, sum.AcceptErrors, sum.Superseded, list, sum.Streams, sum.Evicted,
-		sum.Bytes, sum.Elapsed.Seconds(), mbs)
+		sum.Bytes, sum.Elapsed.Seconds(), mbs, sum.Processed, sum.Gaps, sum.Overruns, sum.ProcP99, sum.ProcMax)
+	procByID := make(map[uint64]ProcSnapshot, len(sum.ProcSnapshots))
+	for _, ps := range sum.ProcSnapshots {
+		procByID[ps.StreamID] = ps
+	}
 	for _, sn := range sum.StreamSnapshots {
 		fmt.Fprintln(out, sn.Line())
+		fmt.Fprintln(out, procByID[sn.StreamID].Line())
 	}
 	return sum
 }
